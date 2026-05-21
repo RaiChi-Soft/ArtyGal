@@ -39,5 +39,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['resources\\artygal.ico'],
+    icon=['D:\\400HBI\\490EPN\\EX40AHE\\2026052101_ArtyGal\\resources\\artygal.ico'],
 )

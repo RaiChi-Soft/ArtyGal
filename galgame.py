@@ -59,8 +59,6 @@ def resource_path(relative_path: str) -> Path:
 RESOURCE_DIR: Path = resource_path("resources")
 ANSI_DIR: Path = RESOURCE_DIR
 MUSIC_FILE: Path = RESOURCE_DIR / "Drafting_the_Final_Gear.mp3"
-INTRO_DIR: Path = RESOURCE_DIR / "intro"
-INTRO_FPS: int = 10
 
 DISCLAIMER_TEXT = "本故事纯属虚构，如有雷同纯属巧合。\n弘扬正能量，做新时代好青年。"
 
@@ -110,18 +108,6 @@ def get_scene_art(bg_id: str) -> Text:
     file_stem = SCENE_ART_MAP.get(bg_id, bg_id)
     path = ANSI_DIR / f"{file_stem}.ans"
     return load_ansi_art(path)
-
-
-_INTRO_FRAME_CACHE: Optional[List[Text]] = None
-
-
-def load_intro_frames() -> List[Text]:
-    """加载启动动画 ANSI 帧。"""
-    global _INTRO_FRAME_CACHE
-    if _INTRO_FRAME_CACHE is None:
-        frame_paths = sorted(INTRO_DIR.glob("frame_*.ans"))
-        _INTRO_FRAME_CACHE = [load_ansi_art(path) for path in frame_paths]
-    return _INTRO_FRAME_CACHE
 
 
 # ============================================================
@@ -2611,62 +2597,6 @@ class GameState:
 # ============================================================
 
 
-class IntroScreen(Screen):
-    """启动动画画面"""
-
-    BINDINGS = [
-        Binding("enter", "skip_intro", "跳过"),
-        Binding("space", "skip_intro", "跳过"),
-        Binding("escape", "skip_intro", "跳过"),
-    ]
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.frames: List[Text] = []
-        self.frame_index = 0
-        self.finished = False
-
-    def compose(self) -> ComposeResult:
-        yield Container(
-            Vertical(
-                Static("", id="intro_art"),
-                Static("Press Enter to skip", id="intro_hint"),
-                id="intro_inner",
-            ),
-            id="intro_container",
-        )
-
-    def on_mount(self) -> None:
-        self.frames = load_intro_frames()
-        if not self.frames:
-            self._finish_intro()
-            return
-        self._render_frame()
-        self.set_interval(1 / INTRO_FPS, self._next_frame)
-
-    def _render_frame(self) -> None:
-        art = self.query_one("#intro_art", Static)
-        art.update(self.frames[self.frame_index])
-
-    def _next_frame(self) -> None:
-        if self.finished:
-            return
-        self.frame_index += 1
-        if self.frame_index >= len(self.frames):
-            self._finish_intro()
-            return
-        self._render_frame()
-
-    def _finish_intro(self) -> None:
-        if self.finished:
-            return
-        self.finished = True
-        self.app.push_screen(TitleScreen())
-
-    def action_skip_intro(self) -> None:
-        self._finish_intro()
-
-
 class TitleScreen(Screen):
     """标题画面"""
 
@@ -3355,30 +3285,6 @@ Screen {
     height: 100%;
 }
 
-#intro_container {
-    align: center middle;
-    width: 100%;
-    height: 100%;
-}
-
-#intro_inner {
-    align: center middle;
-    width: 100%;
-    height: 100%;
-}
-
-#intro_art {
-    width: auto;
-    height: auto;
-    text-align: center;
-}
-
-#intro_hint {
-    text-align: center;
-    color: $text-muted;
-    padding-top: 1;
-}
-
 #title_inner {
     align: center middle;
     width: 100%;
@@ -3624,10 +3530,7 @@ class ArtyGal(App):
         self.game_state = GameState()
         self.audio = AudioManager(MUSIC_FILE)
         self.audio.start()
-        if INTRO_DIR.exists() and any(INTRO_DIR.glob("frame_*.ans")):
-            self.push_screen(IntroScreen())
-        else:
-            self.push_screen(TitleScreen())
+        self.push_screen(TitleScreen())
 
     def action_quit_game(self) -> None:
         if hasattr(self, "audio"):

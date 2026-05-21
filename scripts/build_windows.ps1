@@ -15,9 +15,6 @@ if (-not (Test-Path "resources\Drafting_the_Final_Gear.mp3")) {
 }
 
 python tools\make_icon.py
-if (Test-Path "role\raichisoft.mp4") {
-    python tools\mp4_to_ansi.py --input "role\raichisoft.mp4" --output "resources\intro" --width 64 --fps 10
-}
 $IconPath = (Resolve-Path "resources\artygal.ico").Path
 
 Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue

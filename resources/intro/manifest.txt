@@ -1,3 +1,0 @@
-fps=10
-frames=120
-width=64

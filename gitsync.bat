@@ -14,4 +14,4 @@ for /f "tokens=1-6 delims=/: " %%a in ('echo %date%%time%') do (
 git commit -m "%year%-%month%-%day% %hour%:%minute%:%second%"
 
 @REM git commit -m "XXXXXX"
-git push -u origin master
+git push -u origin main

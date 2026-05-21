@@ -1,0 +1,6 @@
+build*/
+generated/
+*.o
+*.obj
+*.exe
+*.hpp.tmp

@@ -2,8 +2,6 @@ import os
 from PIL import Image
 
 # 终端输出宽度（相当于像素宽度）
-# 9:16 比例下，如果宽是 54，高就是 96（占用终端 54列，48行）
-# 可以根据你的 TUI 界面实际可用大小进行调整
 TARGET_WIDTH = 32 
 
 def convert_image_to_ansi(image_path, output_path, width=54):
@@ -37,12 +35,16 @@ def convert_image_to_ansi(image_path, output_path, width=54):
             tr, tg, tb, ta = top_pixel
             br, bg, bb, ba = bottom_pixel
             
-            # 处理透明度逻辑 (阈值设为 128)
-            top_visible = ta > 128
-            bottom_visible = ba > 128
+            # 【修改点】判断是否为白色 (RGB均大于 245 视作白色背景)
+            top_is_white = (tr > 245 and tg > 245 and tb > 245)
+            bottom_is_white = (br > 245 and bg > 245 and bb > 245)
+            
+            # 【修改点】处理可见度逻辑 (透明或纯白都视作不可见，输出空格)
+            top_visible = (ta > 128) and not top_is_white
+            bottom_visible = (ba > 128) and not bottom_is_white
             
             if not top_visible and not bottom_visible:
-                # 上下都透明，输出空格
+                # 上下都透明或白色，输出空格
                 line += "\033[0m "
             elif top_visible and not bottom_visible:
                 # 仅上半部分可见，使用上半方块字符 '▀'，设置前景色为上像素

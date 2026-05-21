@@ -10,6 +10,7 @@ import json
 import os
 import re
 import sys
+import ctypes
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -54,8 +55,14 @@ def resource_path(relative_path: str) -> Path:
     return base_path / relative_path
 
 
-# ANSI资源目录
-ANSI_DIR: Path = resource_path("ansi_art")
+# 资源目录
+RESOURCE_DIR: Path = resource_path("resources")
+ANSI_DIR: Path = RESOURCE_DIR
+MUSIC_FILE: Path = RESOURCE_DIR / "Drafting_the_Final_Gear.mp3"
+INTRO_DIR: Path = RESOURCE_DIR / "intro"
+INTRO_FPS: int = 10
+
+DISCLAIMER_TEXT = "本故事纯属虚构，如有雷同纯属巧合。\n弘扬正能量，做新时代好青年。"
 
 # 存档文件路径
 SAVE_FILE: Path = Path("save_data.json")
@@ -103,6 +110,80 @@ def get_scene_art(bg_id: str) -> Text:
     file_stem = SCENE_ART_MAP.get(bg_id, bg_id)
     path = ANSI_DIR / f"{file_stem}.ans"
     return load_ansi_art(path)
+
+
+_INTRO_FRAME_CACHE: Optional[List[Text]] = None
+
+
+def load_intro_frames() -> List[Text]:
+    """加载启动动画 ANSI 帧。"""
+    global _INTRO_FRAME_CACHE
+    if _INTRO_FRAME_CACHE is None:
+        frame_paths = sorted(INTRO_DIR.glob("frame_*.ans"))
+        _INTRO_FRAME_CACHE = [load_ansi_art(path) for path in frame_paths]
+    return _INTRO_FRAME_CACHE
+
+
+# ============================================================
+# 背景音乐
+# ============================================================
+
+
+class AudioManager:
+    """使用 Windows MCI 播放循环 MP3；其它平台自动降级为静音。"""
+
+    def __init__(self, music_path: Path) -> None:
+        self.music_path = music_path
+        self.enabled = True
+        self.volume = 55
+        self._alias = "artygal_bgm"
+        self._opened = False
+        self._available = sys.platform.startswith("win")
+
+    def _mci(self, command: str) -> int:
+        if not self._available:
+            return 1
+        return ctypes.windll.winmm.mciSendStringW(command, None, 0, None)
+
+    def start(self) -> None:
+        if not self.enabled or not self._available or not self.music_path.exists():
+            return
+        if not self._opened:
+            escaped = str(self.music_path).replace('"', "")
+            if self._mci(f'open "{escaped}" type mpegvideo alias {self._alias}') != 0:
+                self._available = False
+                return
+            self._opened = True
+        self.set_volume(self.volume)
+        self._mci(f"play {self._alias} repeat")
+
+    def stop(self) -> None:
+        if self._opened:
+            self._mci(f"stop {self._alias}")
+
+    def close(self) -> None:
+        if self._opened:
+            self._mci(f"stop {self._alias}")
+            self._mci(f"close {self._alias}")
+            self._opened = False
+
+    def toggle(self) -> None:
+        self.enabled = not self.enabled
+        if self.enabled:
+            self.start()
+        else:
+            self.stop()
+
+    def set_volume(self, volume: int) -> None:
+        self.volume = max(0, min(100, volume))
+        if self._opened:
+            self._mci(f"setaudio {self._alias} volume to {self.volume * 10}")
+
+    def volume_down(self) -> None:
+        self.set_volume(self.volume - 10)
+
+    def volume_up(self) -> None:
+        self.set_volume(self.volume + 10)
 
 
 # ============================================================
@@ -2151,7 +2232,6 @@ STORY_FINAL_LENGTH_EXPANSIONS_AFTER: Dict[str, List[dict]] = {
             "text": "训练日志的最后一栏写着「今日误差原因」。小G原本只想填技术问题，后来又补上了犹豫、抢拍、沟通太慢。火炮把所有人的弱点都放大，却也给了他们修正弱点的坐标。",
             "characters": [],
             "bg": "workshop",
-            "achievement": "唯实",
         }
     ],
     "ch3_4": [
@@ -2179,7 +2259,6 @@ STORY_FINAL_LENGTH_EXPANSIONS_AFTER: Dict[str, List[dict]] = {
             "text": "为了省下一组高强度连接件，大家轮流去旧仓库拆可用零件。灰尘呛得人直咳嗽，可每找到一枚还能使用的螺栓，工作室里就像多了一点继续向前的资本。",
             "characters": [],
             "bg": "workshop",
-            "achievement": "俭朴",
         }
     ],
     "ch5_6": [
@@ -2245,6 +2324,153 @@ STORY_FINAL_LENGTH_EXPANSIONS_AFTER: Dict[str, List[dict]] = {
     ],
 }
 
+STORY_BRANCHING_AFTER: Dict[str, dict] = {
+    "ch2_15": {
+        "choices": [
+            {"text": "复盘装填节奏，优先减少队内失误", "next": "ch2_15_branch_rhythm", "affection": {"xr": 1}, "achievement": "唯实"},
+            {"text": "检查炮架材料，优先排除结构隐患", "next": "ch2_15_branch_frame", "affection": {"sl": 1}, "achievement": "俭朴"},
+            {"text": "重算风偏表，优先提高弹道预测", "next": "ch2_15_branch_weather", "affection": {"wy": 1}},
+        ],
+        "scenes": [
+            {
+                "id": "ch2_15_branch_rhythm",
+                "text": "小G把训练录像倒回十几遍，和夏燃一起数每一次装填、闭锁、退步的节拍。她笑着说这比跑圈还累，可下一轮训练里，整支队伍的动作第一次像一门真正的炮。",
+                "character": "xr",
+                "char_name": "夏燃",
+                "characters": ["xr"],
+                "bg": "range",
+                "next": "ch2_16",
+            },
+            {
+                "id": "ch2_15_branch_frame",
+                "text": "小G没有急着追求更漂亮的成绩，而是和苏凛把旧炮架拆到只剩主梁。两人发现几处可修补的疲劳点，用最省钱的方式换来了更可靠的复位。",
+                "character": "sl",
+                "char_name": "苏凛",
+                "characters": ["sl"],
+                "bg": "workshop",
+                "next": "ch2_16",
+            },
+            {
+                "id": "ch2_15_branch_weather",
+                "text": "小G坐到温屿身边，把风偏表从头重算。那些数字起初像雾，后来渐渐变成清晰的路标，指向每一发炮弹可能抵达的位置。",
+                "character": "wy",
+                "char_name": "温屿",
+                "characters": ["wy"],
+                "bg": "range",
+                "next": "ch2_16",
+            },
+        ],
+    },
+    "ch5_4": {
+        "choices": [
+            {"text": "坚持采购关键新件，压缩非核心开销", "next": "ch5_4_branch_newpart", "affection": {"sl": 1}},
+            {"text": "从旧仓库翻修可用零件，贯彻俭朴路线", "next": "ch5_4_branch_reuse", "affection": {"qy": 2}, "achievement": "俭朴"},
+            {"text": "申请靶场勤务换取材料赞助", "next": "ch5_4_branch_sponsor", "affection": {"xr": 1}},
+        ],
+        "scenes": [
+            {
+                "id": "ch5_4_branch_newpart",
+                "text": "小G划掉了几项外观改装，把预算集中到闭锁机构的新件上。苏凛看着清单点了点头：漂亮可以以后再说，安全和精度不能等。",
+                "character": "sl",
+                "char_name": "苏凛",
+                "characters": ["sl"],
+                "bg": "workshop",
+                "next": "ch5_5",
+            },
+            {
+                "id": "ch5_4_branch_reuse",
+                "text": "秋柚带着小G钻进旧仓库，从报废器材里挑出还能修复的零件。灰尘落满肩膀时，她却笑得很开心：省下来的每一枚螺栓，都会变成炽锋的一部分。",
+                "character": "qy",
+                "char_name": "秋柚",
+                "characters": ["qy"],
+                "bg": "workshop",
+                "next": "ch5_5",
+            },
+            {
+                "id": "ch5_4_branch_sponsor",
+                "text": "夏燃拉着小G去靶场帮忙维护设备，用一整天的勤务换来材料赞助。回程时两人累得说不出话，却都觉得那袋合金件重得很值得。",
+                "character": "xr",
+                "char_name": "夏燃",
+                "characters": ["xr"],
+                "bg": "range",
+                "next": "ch5_5",
+            },
+        ],
+    },
+    "ch6_8": {
+        "choices": [
+            {"text": "稳住节奏，按苏凛方案打稳定散布", "next": "ch6_8_branch_stable", "affection": {"sl": 1}, "achievement": "唯实"},
+            {"text": "抓住窗口，给夏燃一次高风险反击", "next": "ch6_8_branch_fire", "affection": {"xr": 2}, "achievement": "创新"},
+            {"text": "相信温屿，等待下一阵侧风回落", "next": "ch6_8_branch_wait", "affection": {"wy": 2}},
+        ],
+        "scenes": [
+            {
+                "id": "ch6_8_branch_stable",
+                "text": "小G选择把节奏压稳。炽锋没有打出最惊人的炮声，却连续两发落在几乎相同的位置，像用沉默告诉黑岩：稳定本身也是一种压迫。",
+                "character": "sl",
+                "char_name": "苏凛",
+                "characters": ["sl"],
+                "bg": "range",
+                "next": "ch6_9",
+            },
+            {
+                "id": "ch6_8_branch_fire",
+                "text": "夏燃得到许可的瞬间，眼睛亮得像炮口焰。那一发带着更激进的装填节奏冲向靶心边缘，虽然风险很高，却把全场气势重新拉回锋焰这边。",
+                "character": "xr",
+                "char_name": "夏燃",
+                "characters": ["xr"],
+                "bg": "range",
+                "next": "ch6_9",
+            },
+            {
+                "id": "ch6_8_branch_wait",
+                "text": "小G顶住观众席的催促，选择等待。十几秒后风向袋微微回摆，温屿报出新的修正量。炮弹离膛时，他知道这份耐心没有白费。",
+                "character": "wy",
+                "char_name": "温屿",
+                "characters": ["wy"],
+                "bg": "range",
+                "next": "ch6_9",
+            },
+        ],
+    },
+    "ch7_4": {
+        "choices": [
+            {"text": "选择军械研究所，继续追逐更远射程", "next": "ch7_4_branch_research", "affection": {"sl": 1}, "achievement": "献身"},
+            {"text": "留下整理社团资料，帮助后来者起步", "next": "ch7_4_branch_legacy", "affection": {"qy": 1}, "achievement": "团结"},
+            {"text": "先去靶场，再认真听自己心里的答案", "next": "ch7_4_branch_range", "affection": {"wy": 1}},
+        ],
+        "scenes": [
+            {
+                "id": "ch7_4_branch_research",
+                "text": "小G把研究所的志愿填在第一栏。那不是离开伙伴，而是带着他们教会自己的精度、勇气、耐心和维护意识，去面对更复杂的火炮问题。",
+                "character": "xg",
+                "char_name": "小G",
+                "characters": ["xg"],
+                "bg": "school",
+                "next": "ch7_5",
+            },
+            {
+                "id": "ch7_4_branch_legacy",
+                "text": "小G决定先把社团资料整理完整。图纸、弹道表、维护记录、失败报告，全都被他分门别类放好。他希望后来者少走一点弯路，却仍然保留犯错后重新站起的勇气。",
+                "character": "xg",
+                "char_name": "小G",
+                "characters": ["xg"],
+                "bg": "workshop",
+                "next": "ch7_5",
+            },
+            {
+                "id": "ch7_4_branch_range",
+                "text": "小G没有立刻填表，而是去了靶场。风从空旷地带吹来，带着熟悉的尘土味。他忽然明白，自己并不是没有答案，只是想郑重地向这片场地告别。",
+                "character": "xg",
+                "char_name": "小G",
+                "characters": ["xg"],
+                "bg": "range",
+                "next": "ch7_5",
+            },
+        ],
+    },
+}
+
 
 def _apply_story_expansions() -> None:
     """把扩展剧情插入到原有脚本中，保持原分支跳转稳定。"""
@@ -2263,11 +2489,15 @@ def _apply_story_expansions() -> None:
                 for key in ("chapter_end", "final_ending")
                 if key in scene
             }
+            branch = STORY_BRANCHING_AFTER.get(scene.get("id", ""))
+            if branch:
+                scene["choices"] = branch["choices"]
             expanded_scenes.append(scene)
             inserted_scenes = [
                 *STORY_EXPANSIONS_AFTER.get(scene.get("id", ""), []),
                 *STORY_LONGFORM_EXPANSIONS_AFTER.get(scene.get("id", ""), []),
                 *STORY_FINAL_LENGTH_EXPANSIONS_AFTER.get(scene.get("id", ""), []),
+                *([] if not branch else branch["scenes"]),
             ]
             expanded_scenes.extend(inserted_scenes)
             if terminal_flags:
@@ -2320,6 +2550,17 @@ class GameState:
         if ach and ach not in self.achievements:
             self.achievements.append(ach)
 
+    def get_titles(self) -> List[str]:
+        """根据最终成就组合计算隐藏称号。"""
+        achievements = set(self.achievements)
+        if achievements == {"团结", "献身", "求是", "创新"}:
+            return ["光荣的炮兵"]
+        if achievements == {"团结", "俭朴", "唯实", "创新"}:
+            return ["航奸"]
+        if achievements == {"团结", "献身", "求是", "创新", "俭朴", "唯实"}:
+            return ["双生一体"]
+        return []
+
     def get_top_heroine(self) -> Optional[str]:
         """获取好感度最高的女主"""
         if not any(self.affection.values()):
@@ -2370,12 +2611,70 @@ class GameState:
 # ============================================================
 
 
+class IntroScreen(Screen):
+    """启动动画画面"""
+
+    BINDINGS = [
+        Binding("enter", "skip_intro", "跳过"),
+        Binding("space", "skip_intro", "跳过"),
+        Binding("escape", "skip_intro", "跳过"),
+    ]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.frames: List[Text] = []
+        self.frame_index = 0
+        self.finished = False
+
+    def compose(self) -> ComposeResult:
+        yield Container(
+            Vertical(
+                Static("", id="intro_art"),
+                Static("Press Enter to skip", id="intro_hint"),
+                id="intro_inner",
+            ),
+            id="intro_container",
+        )
+
+    def on_mount(self) -> None:
+        self.frames = load_intro_frames()
+        if not self.frames:
+            self._finish_intro()
+            return
+        self._render_frame()
+        self.set_interval(1 / INTRO_FPS, self._next_frame)
+
+    def _render_frame(self) -> None:
+        art = self.query_one("#intro_art", Static)
+        art.update(self.frames[self.frame_index])
+
+    def _next_frame(self) -> None:
+        if self.finished:
+            return
+        self.frame_index += 1
+        if self.frame_index >= len(self.frames):
+            self._finish_intro()
+            return
+        self._render_frame()
+
+    def _finish_intro(self) -> None:
+        if self.finished:
+            return
+        self.finished = True
+        self.app.push_screen(TitleScreen())
+
+    def action_skip_intro(self) -> None:
+        self._finish_intro()
+
+
 class TitleScreen(Screen):
     """标题画面"""
 
     BINDINGS = [
         Binding("enter", "start_game", "开始游戏"),
         Binding("l", "load_game", "读取存档"),
+        Binding("m", "show_menu", "设置"),
+        Binding("c", "show_credits", "Credits"),
         Binding("q", "quit", "退出游戏"),
     ]
 
@@ -2383,9 +2682,11 @@ class TitleScreen(Screen):
         yield Header(show_clock=True)
         yield Container(
             Vertical(
+                Label("RaiChi-Soft", id="title_company"),
                 Label("", id="title_logo"),
                 Static("", id="title_text"),
                 Static("", id="title_sub"),
+                Static("", id="title_disclaimer"),
                 Static("", id="title_menu"),
                 id="title_inner",
             ),
@@ -2394,6 +2695,10 @@ class TitleScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
+        title_company = self.query_one("#title_company", Label)
+        title_company.update(
+            Text("RaiChi-Soft", style=Style(color="bright_magenta", bold=True))
+        )
         title_logo = self.query_one("#title_logo", Label)
         title_logo.update(
             "\n"
@@ -2412,18 +2717,18 @@ class TitleScreen(Screen):
             )
         )
         title_sub = self.query_one("#title_sub", Static)
-        title_sub.update(
-            Text(
-                "少年以毕生热忱献身火炮军械\n"
-                "以炮为魂·以火为志·热血逐梦军械之路",
-                style=Style(color="grey70", italic=True),
-            )
+        title_sub.update(Text("以炮为魂·以火为志", style=Style(color="grey70", italic=True)))
+        title_disclaimer = self.query_one("#title_disclaimer", Static)
+        title_disclaimer.update(
+            Text(DISCLAIMER_TEXT, style=Style(color="bright_green"))
         )
         title_menu = self.query_one("#title_menu", Static)
         title_menu.update(
             Text(
                 "[ Enter ] 开始新游戏\n"
                 "[  L   ] 读取存档\n"
+                "[  M   ] 设置\n"
+                "[  C   ] Credits\n"
                 "[  Q   ] 退出游戏",
                 style=Style(color="grey54"),
             )
@@ -2447,6 +2752,12 @@ class TitleScreen(Screen):
 
     def action_quit(self) -> None:
         self.app.exit()
+
+    def action_show_menu(self) -> None:
+        self.app.push_screen(SettingsScreen())
+
+    def action_show_credits(self) -> None:
+        self.app.push_screen(CreditsScreen())
 
 
 class MessageScreen(ModalScreen):
@@ -2543,6 +2854,86 @@ class SaveLoadScreen(ModalScreen):
             self.dismiss()
 
 
+class SettingsScreen(ModalScreen):
+    """设置页"""
+
+    def compose(self) -> ComposeResult:
+        yield Container(
+            Vertical(
+                Label("── Settings ──", id="settings_title"),
+                Static("", id="settings_info"),
+                Horizontal(
+                    Button("Music On/Off", variant="primary", id="music_toggle"),
+                    Button("Vol -", id="music_down"),
+                    Button("Vol +", id="music_up"),
+                    id="settings_buttons",
+                ),
+                Button("Close", variant="default", id="settings_close"),
+                id="settings_inner",
+            ),
+            id="msg_overlay",
+        )
+
+    def on_mount(self) -> None:
+        self._refresh_info()
+
+    def _refresh_info(self) -> None:
+        audio = getattr(self.app, "audio", None)
+        music_status = "On" if audio and audio.enabled else "Off"
+        volume = audio.volume if audio else 0
+        info = (
+            f"Music: {music_status}    Volume: {volume}%\n\n"
+            "Use the buttons below to control background music.\n"
+            "Open Credits from the title screen with [C], or in game with [C]."
+        )
+        self.query_one("#settings_info", Static).update(
+            Text(info, style=Style(color="white"))
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        audio = getattr(self.app, "audio", None)
+        if event.button.id == "music_toggle" and audio:
+            audio.toggle()
+            self._refresh_info()
+        elif event.button.id == "music_down" and audio:
+            audio.volume_down()
+            self._refresh_info()
+        elif event.button.id == "music_up" and audio:
+            audio.volume_up()
+            self._refresh_info()
+        elif event.button.id == "settings_close":
+            self.dismiss()
+
+
+class CreditsScreen(ModalScreen):
+    """工作人员与致谢页"""
+
+    def compose(self) -> ComposeResult:
+        credits = (
+            "Planning: RaiChi-Soft\n"
+            "Original Work: Doubao\n"
+            "Scenario: CodeX\n"
+            "Music: Gemini\n"
+            "Art: Gemin\n\n"
+            "Special Thanks:\n"
+            "ConcernedApe, Actas, Production IMS, Yuzu-Soft, Sphere\n\n"
+            f"{DISCLAIMER_TEXT}"
+        )
+        yield Container(
+            Vertical(
+                Label("── Credits ──", id="credits_title"),
+                Static(Text(credits, style=Style(color="white")), id="credits_info"),
+                Button("Close", variant="primary", id="credits_close"),
+                id="credits_inner",
+            ),
+            id="msg_overlay",
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "credits_close":
+            self.dismiss()
+
+
 class MainGameScreen(Screen):
     """主游戏画面"""
 
@@ -2556,6 +2947,7 @@ class MainGameScreen(Screen):
         Binding("l", "load_game", "读档"),
         Binding("a", "show_affection", "好感度"),
         Binding("m", "show_menu", "菜单"),
+        Binding("c", "show_credits", "Credits"),
         Binding("r", "return_title", "返回标题"),
     ]
 
@@ -2630,6 +3022,16 @@ class MainGameScreen(Screen):
             if STORY_SCRIPT[idx].get("chapter", 0) > current_chapter:
                 return idx
         return len(STORY_SCRIPT)
+
+    def _jump_to_scene_id(self, scene_id: str) -> bool:
+        """跳转到指定场景 ID。"""
+        for gi, group in enumerate(STORY_SCRIPT):
+            for si, scene in enumerate(group.get("scenes", [])):
+                if scene.get("id") == scene_id:
+                    self.current_group_index = gi
+                    self.current_scene_index = si
+                    return True
+        return False
 
     def _query_safe(self, selector: str, widget_class):
         """安全查询 widget，不存在则返回 None"""
@@ -2762,6 +3164,14 @@ class MainGameScreen(Screen):
             self._show_ending()
             return
 
+        # 分支短线结束后跳回公共主线
+        if scene.get("next"):
+            if self._jump_to_scene_id(scene["next"]):
+                gs.current_chapter_group = self.current_group_index
+                gs.current_scene_index = self.current_scene_index
+                self._render_scene()
+            return
+
         # 检查是否是章节结束
         if scene.get("chapter_end"):
             self.current_group_index = self._find_next_chapter_group_index()
@@ -2799,27 +3209,7 @@ class MainGameScreen(Screen):
             gs.add_achievement(choice["achievement"])
 
         # 查找下一个场景
-        next_id = choice["next"]
-        group = self._get_current_group()
-        scenes = group.get("scenes", [])
-        found = False
-        for i, s in enumerate(scenes):
-            if s.get("id") == next_id:
-                self.current_scene_index = i
-                found = True
-                break
-
-        if not found:
-            # 搜索所有场景组
-            for gi, grp in enumerate(STORY_SCRIPT):
-                for si, s in enumerate(grp.get("scenes", [])):
-                    if s.get("id") == next_id:
-                        self.current_group_index = gi
-                        self.current_scene_index = si
-                        found = True
-                        break
-                if found:
-                    break
+        found = self._jump_to_scene_id(choice["next"])
 
         if not found:
             # 回退：前进一个场景
@@ -2848,7 +3238,13 @@ class MainGameScreen(Screen):
             )
         char_art = self._query_safe("#char_art", Static)
         if char_art:
-            char_art.update(Text(""))
+            school_art = get_scene_art("school")
+            char_art.update(
+                Text.assemble(
+                    school_art,
+                    Text("\n  锋焰高等学园", style=Style(color="grey70")),
+                )
+            )
         choices_container = self._query_safe("#choices_container", Vertical)
         if choices_container:
             choices_container.display = False
@@ -2865,6 +3261,8 @@ class MainGameScreen(Screen):
             name_label.update(Text(""))
         end_text = "「炮鸣响彻赛场，炽焰永不息。」\n\n"
         end_text += f"已获得成就：{'、'.join(gs.achievements) if gs.achievements else '无'}\n\n"
+        titles = gs.get_titles()
+        end_text += f"隐藏称号：{'、'.join(titles) if titles else '未获得'}\n\n"
         end_text += "好感度总结：\n"
         for cid, name in [("sl", "苏凛"), ("xr", "夏燃"), ("wy", "温屿"), ("qy", "秋柚")]:
             hearts = "♥" * min(gs.affection[cid] // 2, 5)
@@ -2875,7 +3273,13 @@ class MainGameScreen(Screen):
             dialog.update(Text(end_text, style=Style(color="bright_yellow")))
         char_art = self._query_safe("#char_art", Static)
         if char_art:
-            char_art.update(Text(""))
+            school_art = get_scene_art("school")
+            char_art.update(
+                Text.assemble(
+                    school_art,
+                    Text("\n  锋焰高等学园", style=Style(color="grey70")),
+                )
+            )
         choices_container = self._query_safe("#choices_container", Vertical)
         if choices_container:
             choices_container.display = False
@@ -2920,18 +3324,10 @@ class MainGameScreen(Screen):
         self.app.push_screen(MessageScreen(info, title="角色状态"))
 
     def action_show_menu(self) -> None:
-        self.app.push_screen(
-            MessageScreen(
-                "[Enter] 继续剧情\n"
-                "[1-4] 选择分支\n"
-                "[S] 保存进度\n"
-                "[L] 读取存档\n"
-                "[A] 查看好感度\n"
-                "[R] 返回标题\n"
-                "[Q] 退出游戏",
-                title="操作说明",
-            )
-        )
+        self.app.push_screen(SettingsScreen())
+
+    def action_show_credits(self) -> None:
+        self.app.push_screen(CreditsScreen())
 
     def action_return_title(self) -> None:
         self.app.pop_screen()
@@ -2959,12 +3355,43 @@ Screen {
     height: 100%;
 }
 
+#intro_container {
+    align: center middle;
+    width: 100%;
+    height: 100%;
+}
+
+#intro_inner {
+    align: center middle;
+    width: 100%;
+    height: 100%;
+}
+
+#intro_art {
+    width: auto;
+    height: auto;
+    text-align: center;
+}
+
+#intro_hint {
+    text-align: center;
+    color: $text-muted;
+    padding-top: 1;
+}
+
 #title_inner {
     align: center middle;
     width: 100%;
     max-width: 70;
     padding: 2 4;
     border: solid $accent;
+}
+
+#title_company {
+    color: $secondary;
+    text-align: center;
+    width: 100%;
+    padding-bottom: 1;
 }
 
 #title_logo {
@@ -2983,7 +3410,14 @@ Screen {
 #title_sub {
     text-align: center;
     width: 100%;
+    padding-bottom: 1;
+}
+
+#title_disclaimer {
+    text-align: center;
+    width: 100%;
     padding-bottom: 2;
+    color: $success;
 }
 
 #title_menu {
@@ -3115,6 +3549,59 @@ Screen {
     width: 20;
     margin: 0 1;
 }
+
+#settings_inner {
+    width: 62;
+    padding: 2 3;
+    border: solid $accent;
+    background: $surface;
+}
+
+#settings_title {
+    text-align: center;
+    padding-bottom: 1;
+    color: $accent;
+}
+
+#settings_info {
+    padding-bottom: 2;
+}
+
+#settings_buttons {
+    width: 100%;
+    align: center middle;
+    padding-bottom: 1;
+}
+
+#music_toggle, #music_down, #music_up {
+    width: 18;
+    margin: 0 1;
+}
+
+#settings_close {
+    width: 100%;
+}
+
+#credits_inner {
+    width: 62;
+    padding: 2 3;
+    border: solid $accent;
+    background: $surface;
+}
+
+#credits_title {
+    text-align: center;
+    padding-bottom: 1;
+    color: $accent;
+}
+
+#credits_info {
+    padding-bottom: 2;
+}
+
+#credits_close {
+    width: 100%;
+}
 """
 
 
@@ -3131,12 +3618,20 @@ class ArtyGal(App):
         Binding("q", "quit_game", "退出"),
     ]
     game_state: GameState
+    audio: AudioManager
 
     def on_mount(self) -> None:
         self.game_state = GameState()
-        self.push_screen(TitleScreen())
+        self.audio = AudioManager(MUSIC_FILE)
+        self.audio.start()
+        if INTRO_DIR.exists() and any(INTRO_DIR.glob("frame_*.ans")):
+            self.push_screen(IntroScreen())
+        else:
+            self.push_screen(TitleScreen())
 
     def action_quit_game(self) -> None:
+        if hasattr(self, "audio"):
+            self.audio.close()
         self.exit()
 
 

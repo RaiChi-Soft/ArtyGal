@@ -9,7 +9,7 @@ a = Analysis(
     ['galgame.py'],
     pathex=[],
     binaries=[],
-    datas=[('ansi_art', 'ansi_art')],
+    datas=[('resources', 'resources')],
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
@@ -39,4 +39,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['resources\\artygal.ico'],
 )

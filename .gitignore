@@ -1,0 +1,16 @@
+# Build artifacts
+build/
+release/
+__pycache__/
+*.pyc
+
+# Documentation
+README.md
+archives/cpp/README.md
+role/*.docx
+role/*.md
+role/*.pdf
+role/*.pptx
+
+# Archives
+archives/cpp_ftxui_refactor_archive.zip
